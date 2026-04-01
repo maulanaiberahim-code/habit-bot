@@ -1,0 +1,19 @@
+{
+  "name": "personal-system",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app2.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.6.0",
+    "dayjs": "^1.11.20",
+    "node-cron": "^4.2.1",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
