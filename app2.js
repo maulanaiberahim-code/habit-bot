@@ -2,7 +2,7 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
 } = require("@whiskeysockets/baileys");
 
 const qrcode = require("qrcode-terminal");
@@ -54,7 +54,8 @@ async function startWA() {
       console.log("❌ Connection closed");
 
       const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        lastDisconnect?.error?.output?.statusCode !==
+        DisconnectReason.loggedOut;
 
       if (shouldReconnect) {
         console.log("🔁 Reconnecting...");
@@ -79,8 +80,7 @@ async function startWA() {
     // if (!ALLOWED.includes(sender)) return;
 
     const text =
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text;
+      msg.message.conversation || msg.message.extendedTextMessage?.text;
 
     if (!text) return;
 
@@ -108,7 +108,7 @@ function resetIfNewDay(data) {
 
   if (data.date !== today) {
     data.date = today;
-    data.tasks.forEach(t => (t.done = false));
+    data.tasks.forEach((t) => (t.done = false));
     data.lastMissDate = null;
     save(data);
   }
@@ -129,7 +129,7 @@ function checkMissLogic() {
   resetIfNewDay(data);
 
   const today = dayjs().format("YYYY-MM-DD");
-  const pendingTasks = data.tasks.filter(t => !t.done);
+  const pendingTasks = data.tasks.filter((t) => !t.done);
 
   if (pendingTasks.length > 0) {
     if (!data.lastMissDate || data.lastMissDate !== today) {
@@ -140,7 +140,7 @@ function checkMissLogic() {
 
     const fine = data.penalty * data.streak;
     const roast = getEscalationMessage(data.failStreak);
-    const taskList = pendingTasks.map(t => `• ${t.name}`);
+    const taskList = pendingTasks.map((t) => `• ${t.name}`);
 
     const message = [
       "💀 MISS!",
@@ -152,7 +152,7 @@ function checkMissLogic() {
       ...taskList,
       "",
       `🔥 Streak gagal: ${data.streak}`,
-      `💸 Denda: Rp${fine}`
+      `💸 Denda: Rp${fine}`,
     ].join("\n");
 
     save(data);
@@ -166,7 +166,7 @@ function checkMissLogic() {
 
   return {
     result: "SAFE",
-    message: "🔥 GOOD JOB! Semua task selesai hari ini ✅"
+    message: "🔥 GOOD JOB! Semua task selesai hari ini ✅",
   };
 }
 
@@ -175,13 +175,13 @@ function checkReminderLogic() {
   let data = load();
   resetIfNewDay(data);
 
-  const pendingTasks = data.tasks.filter(t => !t.done);
+  const pendingTasks = data.tasks.filter((t) => !t.done);
 
   if (pendingTasks.length > 0) {
     const nextStreak = (data.streak || 0) + 1;
     const fine = data.penalty * nextStreak;
 
-    const taskList = pendingTasks.map(t => `• ${t.name}`);
+    const taskList = pendingTasks.map((t) => `• ${t.name}`);
 
     const message = [
       "⚠️ Reminder!",
@@ -191,7 +191,7 @@ function checkReminderLogic() {
       `🔥 Kalau gagal streak jadi: ${nextStreak}`,
       `💸 Denda: Rp${fine}`,
       "",
-      "⏰ Deadline: 23:59"
+      "⏰ Deadline: 23:59",
     ].join("\n");
 
     return { result: "REMIND", message };
@@ -202,62 +202,52 @@ function checkReminderLogic() {
 
 // ===== COMMAND HANDLER =====
 async function handleCommand(text, sender) {
-    if (text === "test") {
-        console.log("📤 SENDING TEST REPLY...");
-        await sock.sendMessage(sender, { text: "BOT HIDUP ✅" });
-        console.log("✅ SENT");
-        return;
-    }
-    console.log("🚀 MASUK HANDLE COMMAND:", text);
+  if (text === "test") {
+    console.log("📤 SENDING TEST REPLY...");
+    await sock.sendMessage(sender, { text: "BOT HIDUP ✅" });
+    console.log("✅ SENT");
+    return;
+  }
+  console.log("🚀 MASUK HANDLE COMMAND:", text);
 
   const data = load();
 
   if (text === "cek") {
     const result = checkReminderLogic();
     await sock.sendMessage(sender, {
-      text: result.message || "✅ Aman"
+      text: result.message || "✅ Aman",
     });
-  }
-
-  else if (text === "miss") {
+  } else if (text === "miss") {
     const result = checkMissLogic();
     await sock.sendMessage(sender, { text: result.message });
-  }
-
-  else if (text === "status") {
-    const list = data.tasks.map(t =>
-      `${t.done ? "✅" : "❌"} ${t.name}`
-    );
+  } else if (text === "status") {
+    const list = data.tasks.map((t) => `${t.done ? "✅" : "❌"} ${t.name}`);
 
     await sock.sendMessage(sender, {
-      text: ["📊 STATUS:", "", ...list].join("\n")
+      text: ["📊 STATUS:", "", ...list].join("\n"),
     });
-  }
-
-  else if (text.startsWith("add ")) {
+  } else if (text.startsWith("add ")) {
     const taskName = text.replace("add ", "");
 
     data.tasks.push({
       id: Date.now(),
       name: taskName,
-      done: false
+      done: false,
     });
 
     save(data);
 
     await sock.sendMessage(sender, {
-      text: `✅ Task "${taskName}" ditambahkan`
+      text: `✅ Task "${taskName}" ditambahkan`,
     });
-  }
-
-  else if (text.startsWith("done ")) {
+  } else if (text.startsWith("done ")) {
     const taskName = text.replace("done ", "");
 
-    const task = data.tasks.find(t => t.name === taskName);
+    const task = data.tasks.find((t) => t.name === taskName);
 
     if (!task) {
       await sock.sendMessage(sender, {
-        text: "❌ Task tidak ditemukan"
+        text: "❌ Task tidak ditemukan",
       });
       return;
     }
@@ -266,11 +256,29 @@ async function handleCommand(text, sender) {
     save(data);
 
     await sock.sendMessage(sender, {
-      text: `🔥 Task "${taskName}" selesai`
+      text: `🔥 Task "${taskName}" selesai`,
     });
-  }
+  } else if (text.startsWith("del ") || text.startsWith("delete ")) {
+    const taskName = text.replace("del ", "").replace("delete ", "");
 
-  else if (text === "help") {
+    const index = data.tasks.findIndex((t) => t.name === taskName);
+
+    if (index === -1) {
+      await sock.sendMessage(sender, {
+        text: "❌ Task tidak ditemukan",
+      });
+      return;
+    }
+
+    const deletedTask = data.tasks[index].name;
+
+    data.tasks.splice(index, 1);
+    save(data);
+
+    await sock.sendMessage(sender, {
+      text: `🗑️ Task "${deletedTask}" berhasil dihapus`,
+    });
+  } else if (text === "help") {
     await sock.sendMessage(sender, {
       text: `
 🤖 COMMAND:
@@ -280,7 +288,7 @@ miss → check gagal
 status → lihat task
 add [task]
 done [task]
-      `
+      `,
     });
   }
 }
@@ -288,41 +296,46 @@ done [task]
 // ===== CRON =====
 
 // ⏰ reminder 20:00 WIB
-cron.schedule("0 20 * * *", async () => {
-  console.log("⏰ Reminder triggered");
+cron.schedule(
+  "0 20 * * *",
+  async () => {
+    console.log("⏰ Reminder triggered");
 
-  const result = checkReminderLogic();
-  if (result.result !== "REMIND") return;
+    const result = checkReminderLogic();
+    if (result.result !== "REMIND") return;
 
-  const data = load();
+    const data = load();
 
-  await sock.sendMessage(
-    data.shameContacts[0] + "@s.whatsapp.net",
-    { text: result.message }
-  );
-}, { timezone: "Asia/Jakarta" });
+    await sock.sendMessage(data.shameContacts[0] + "@s.whatsapp.net", {
+      text: result.message,
+    });
+  },
+  { timezone: "Asia/Jakarta" },
+);
 
 // 💀 miss 23:59 WIB
-cron.schedule("59 23 * * *", async () => {
-  console.log("💀 Miss triggered");
+cron.schedule(
+  "59 23 * * *",
+  async () => {
+    console.log("💀 Miss triggered");
 
-  const result = checkMissLogic();
-  const data = load();
+    const result = checkMissLogic();
+    const data = load();
 
-  await sock.sendMessage(
-    data.shameContacts[0] + "@s.whatsapp.net",
-    { text: result.message }
-  );
+    await sock.sendMessage(data.shameContacts[0] + "@s.whatsapp.net", {
+      text: result.message,
+    });
 
-  if (result.result === "MISS") {
-    for (const num of data.shameContacts || []) {
-      await sock.sendMessage(
-        num + "@s.whatsapp.net",
-        { text: "😈 DIA GAGAL HARI INI!" }
-      );
+    if (result.result === "MISS") {
+      for (const num of data.shameContacts || []) {
+        await sock.sendMessage(num + "@s.whatsapp.net", {
+          text: "😈 DIA GAGAL HARI INI!",
+        });
+      }
     }
-  }
-}, { timezone: "Asia/Jakarta" });
+  },
+  { timezone: "Asia/Jakarta" },
+);
 
 // ===== START =====
 app.listen(3000, () => {
