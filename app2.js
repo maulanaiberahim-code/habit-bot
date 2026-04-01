@@ -219,7 +219,34 @@ async function handleCommand(text, sender) {
     });
   } else if (text === "miss") {
     const result = checkMissLogic();
+
+    // kirim ke diri sendiri
     await sock.sendMessage(sender, { text: result.message });
+
+    // 🔥 TAMBAHAN: kirim ke shameContacts
+    if (result.result === "MISS") {
+      const fine = data.penalty * data.streak;
+      const failedTasks = data.tasks
+        .filter((t) => !t.done)
+        .map((t) => `• ${t.name}`)
+        .join("\n");
+
+      for (const num of data.shameContacts || []) {
+        await sock.sendMessage(num + "@s.whatsapp.net", {
+          text: `🚨 ALERT MALAM 🚨
+
+Pasangan kamu, ${data.name}, gagal lagi hari ini.
+
+📋 Daftar tugas yang tidak dikerjakan:
+${failedTasks}
+
+📉 Sudah gagal selama: ${data.streak} hari berturut-turut
+💸 Denda yang harus dibayar: Rp${fine}
+
+Ini sudah mulai jadi pola, bukan kejadian sekali 😈`,
+        });
+      }
+    }
   } else if (text === "status") {
     const list = data.tasks.map((t) => `${t.done ? "✅" : "❌"} ${t.name}`);
 
@@ -327,9 +354,35 @@ cron.schedule(
     });
 
     if (result.result === "MISS") {
+      const fine = data.penalty * data.streak;
+
+      // 🔥 ambil escalation message
+      const roast = getEscalationMessage(data.failStreak);
+
+      // 🔥 ambil task gagal
+      const failedTasks =
+        data.tasks.filter((t) => !t.done).length > 0
+          ? data.tasks
+              .filter((t) => !t.done)
+              .map((t) => `• ${t.name}`)
+              .join("\n")
+          : "• (tidak ada task, tapi tetap gagal 😏)";
+
       for (const num of data.shameContacts || []) {
         await sock.sendMessage(num + "@s.whatsapp.net", {
-          text: "😈 DIA GAGAL HARI INI!",
+          text: `🚨 ALERT MALAM 🚨
+
+Pasangan kamu, ${data.name}, gagal lagi hari ini.
+
+${roast}
+
+📋 Tugas yang tidak dikerjakan:
+${failedTasks}
+
+📉 Streak gagal: ${data.streak}
+💸 Denda hari ini: Rp${fine}
+
+Tolong diingatkan ya... sebelum ini jadi kebiasaan 😈`,
         });
       }
     }
