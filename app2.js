@@ -236,24 +236,29 @@ async function handleCommand(text, sender) {
   const data = load();
 
   if (text === "cek") {
-    const r = checkReminderLogic();
-    await sendMessageSafe(data.owner, r.message || "✅ Aman");
-  }
+    const pending = data.tasks.filter((t) => !t.done);
 
-  else if (text === "miss") {
+    if (pending.length === 0) {
+      await sendMessageSafe(data.owner, "✅ Aman (semua task selesai)");
+      return;
+    }
+
+    const list = pending.map((t) => `• ${t.name}`).join("\n");
+
+    await sendMessageSafe(
+      data.owner,
+      `⚠️ Masih ada task belum selesai:\n\n${list}`,
+    );
+  } else if (text === "miss") {
     const r = checkMissLogic();
     await sendMessageSafe(data.owner, r.message);
-  }
-
-  else if (text === "status") {
+  } else if (text === "status") {
     const list = data.tasks
       .map((t) => `${t.done ? "✅" : "❌"} ${t.name}`)
       .join("\n");
 
     await sendMessageSafe(data.owner, "📊 STATUS:\n\n" + list);
-  }
-
-  else if (text.startsWith("add ")) {
+  } else if (text.startsWith("add ")) {
     const name = text.replace("add ", "");
 
     data.tasks.push({
@@ -264,9 +269,7 @@ async function handleCommand(text, sender) {
 
     save(data);
     await sendMessageSafe(data.owner, `✅ Task "${name}" ditambahkan`);
-  }
-
-  else if (text.startsWith("done ")) {
+  } else if (text.startsWith("done ")) {
     const name = text.replace("done ", "");
 
     const task = data.tasks.find((t) => t.name === name);
@@ -298,7 +301,7 @@ cron.schedule(
       await sendMessageSafe(data.owner, r.message);
     }
   },
-  { timezone: "Asia/Jakarta" }
+  { timezone: "Asia/Jakarta" },
 );
 
 // Miss 23:59
@@ -323,12 +326,12 @@ Pasangan kamu, ${data.name}, gagal hari ini.
 ${r.list}
 
 🔥 Streak: ${data.streak}
-💸 Denda: Rp${r.fine}`
+💸 Denda: Rp${r.fine}`,
         );
       }
     }
   },
-  { timezone: "Asia/Jakarta" }
+  { timezone: "Asia/Jakarta" },
 );
 
 // ===== START =====
