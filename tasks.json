@@ -1,14 +1,12 @@
 {
   "date": null,
-  "tasks": [
-  ],
+  "tasks": [],
   "penalty": 25000,
   "streak": 0,
+  "failStreak": 0,
   "name": "LANA",
-  "shameContacts": [
-    "6285857175735"
-  ],
+  "owner": "6285715514097",
+  "shameContacts": ["6285857175735"],
   "lastMissDate": null,
-  "lastRewardDate": null,
-  "failStreak": 0
+  "lastReminderDate": null
 }
