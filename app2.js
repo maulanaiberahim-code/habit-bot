@@ -287,7 +287,7 @@ async function handleCommand(text, sender) {
 
 // Reminder 20:00
 cron.schedule(
-  "0 20 * * *",
+  "*/1 * * * *",
   async () => {
     console.log("⏰ Reminder cron");
 
@@ -303,7 +303,7 @@ cron.schedule(
 
 // Miss 23:59
 cron.schedule(
-  "59 23 * * *",
+  "*/2 * * * *",
   async () => {
     console.log("💀 Miss cron");
 
