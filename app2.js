@@ -16,6 +16,8 @@ app.use(express.json());
 
 const FILE = "./tasks.json";
 const TEST_MODE = process.env.TEST_MODE === "true";
+const REMINDER_CRON = TEST_MODE ? "*/1 * * * *" : "0 20 * * *";
+const MISS_CRON = TEST_MODE ? "*/2 * * * *" : "59 23 * * *";
 
 let sock;
 
@@ -174,6 +176,7 @@ async function recoveryCheck() {
   // Reminder recovery
   if (hour >= 20) {
     const r = checkReminderLogic();
+    console.log("🧠 Recovery reminder ->", r.result);
     if (r.result === "REMIND") {
       await sendMessageSafe(data.owner, "⚠️ (Recovery)\n\n" + r.message);
     }
@@ -182,6 +185,7 @@ async function recoveryCheck() {
   // Miss recovery
   if (hour >= 23) {
     const r = checkMissLogic();
+    console.log("🧠 Recovery miss ->", r.result);
     if (r.result === "MISS") {
       await sendMessageSafe(data.owner, "💀 (Recovery)\n\n" + r.message);
     }
@@ -304,12 +308,11 @@ async function handleCommand(text, sender) {
 
 // Reminder 20:00
 cron.schedule(
-  "*/1 * * * *",
+  REMINDER_CRON,
   async () => {
-    console.log("⏰ Reminder cron");
-
     const data = load();
     const r = checkReminderLogic();
+    console.log(`Reminder cron (${REMINDER_CRON}) ->`, r.result);
 
     if (r.result === "REMIND") {
       await sendMessageSafe(data.owner, r.message);
@@ -320,12 +323,11 @@ cron.schedule(
 
 // Miss 23:59
 cron.schedule(
-  "*/2 * * * *",
+  MISS_CRON,
   async () => {
-    console.log("💀 Miss cron");
-
     const data = load();
     const r = checkMissLogic();
+    console.log(`Miss cron (${MISS_CRON}) ->`, r.result);
 
     if (r.message) {
       await sendMessageSafe(data.owner, r.message);
