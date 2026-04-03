@@ -15,6 +15,7 @@ const app = express();
 app.use(express.json());
 
 const FILE = "./tasks.json";
+const TEST_MODE = process.env.TEST_MODE === "true";
 
 let sock;
 
@@ -70,14 +71,16 @@ function checkReminderLogic() {
 
   const today = dayjs().format("YYYY-MM-DD");
 
-  if (data.lastReminderDate === today) {
+  if (!TEST_MODE && data.lastReminderDate === today) {
     return { result: "SKIP" };
   }
 
   const pending = data.tasks.filter((t) => !t.done);
 
   if (pending.length === 0) {
-    data.lastReminderDate = today;
+    if (!TEST_MODE) {
+      data.lastReminderDate = today;
+    }
     save(data);
     return { result: "SAFE" };
   }
@@ -96,8 +99,10 @@ ${list}
 
 ⏰ Deadline: 23:59`;
 
-  data.lastReminderDate = today;
-  save(data);
+  if (!TEST_MODE) {
+    data.lastReminderDate = today;
+    save(data);
+  }
 
   return { result: "REMIND", message };
 }
@@ -109,7 +114,7 @@ function checkMissLogic() {
 
   const today = dayjs().format("YYYY-MM-DD");
 
-  if (data.lastMissDate === today) {
+  if (!TEST_MODE && data.lastMissDate === today) {
     return { result: "SKIP" };
   }
 
@@ -118,7 +123,9 @@ function checkMissLogic() {
   if (pending.length === 0) {
     data.streak = 0;
     data.failStreak = 0;
-    data.lastMissDate = today;
+    if (!TEST_MODE) {
+      data.lastMissDate = today;
+    }
     save(data);
 
     return {
@@ -127,9 +134,14 @@ function checkMissLogic() {
     };
   }
 
-  data.streak = (data.streak || 0) + 1;
-  data.failStreak = (data.failStreak || 0) + 1;
-  data.lastMissDate = today;
+  if (TEST_MODE) {
+    data.streak = data.streak || 1;
+    data.failStreak = data.failStreak || 1;
+  } else {
+    data.streak = (data.streak || 0) + 1;
+    data.failStreak = (data.failStreak || 0) + 1;
+    data.lastMissDate = today;
+  }
 
   const fine = data.penalty * data.streak;
   const roast = getEscalationMessage(data.failStreak);
@@ -202,7 +214,9 @@ async function startWA() {
       console.log("🔥 Connected!");
 
       // 🔥 Recovery after connect
-      setTimeout(recoveryCheck, 5000);
+      if (!TEST_MODE) {
+        setTimeout(recoveryCheck, 5000);
+      }
     }
 
     if (connection === "close") {
@@ -313,7 +327,9 @@ cron.schedule(
     const data = load();
     const r = checkMissLogic();
 
-    await sendMessageSafe(data.owner, r.message);
+    if (r.message) {
+      await sendMessageSafe(data.owner, r.message);
+    }
 
     if (r.result === "MISS") {
       for (const num of data.shameContacts || []) {
