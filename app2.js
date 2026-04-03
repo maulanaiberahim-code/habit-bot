@@ -16,82 +16,7 @@ app.use(express.json());
 
 const FILE = "./tasks.json";
 
-// // 🔐 whitelist (opsional)
-// const ALLOWED = ["6285715514097@s.whatsapp.net"];
-
-// ===== WHATSAPP INIT =====
 let sock;
-
-async function startWA() {
-  console.log("🔄 Starting WhatsApp...");
-
-  const { state, saveCreds } = await useMultiFileAuthState("auth");
-  const { version } = await fetchLatestBaileysVersion();
-
-  sock = makeWASocket({
-    auth: state,
-    version,
-    browser: ["Ubuntu", "Chrome", "20.0.04"],
-    syncFullHistory: false,
-    markOnlineOnConnect: true,
-  });
-
-  sock.ev.on("creds.update", saveCreds);
-
-  sock.ev.on("connection.update", (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      console.log("📱 QR RECEIVED!");
-      qrcode.generate(qr, { small: true });
-    }
-
-    if (connection === "open") {
-      console.log("🔥 WhatsApp Connected!");
-    }
-
-    if (connection === "close") {
-      console.log("❌ Connection closed");
-
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !==
-        DisconnectReason.loggedOut;
-
-      if (shouldReconnect) {
-        console.log("🔁 Reconnecting...");
-        setTimeout(() => startWA(), 3000);
-      }
-    }
-  });
-
-  // ===== LISTENER CHAT =====
-  sock.ev.on("messages.upsert", async ({ messages }) => {
-    console.log("📩 MASUK EVENT messages.upsert");
-
-    const msg = messages[0];
-
-    // console.log("RAW MESSAGE:", JSON.stringify(msg.message, null, 2));
-
-    if (!msg.message || msg.key.fromMe) return;
-
-    const sender = msg.key.remoteJid;
-
-    // // 🔐 whitelist check
-    // if (!ALLOWED.includes(sender)) return;
-
-    const text =
-      msg.message.conversation || msg.message.extendedTextMessage?.text;
-
-    if (!text) return;
-
-    console.log("📩 Message:", text);
-
-    console.log("TEXT FINAL:", text);
-    console.log("SENDER FINAL:", sender);
-
-    await handleCommand(text.toLowerCase(), sender);
-  });
-}
 
 // ===== LOAD & SAVE =====
 function load() {
@@ -107,9 +32,14 @@ function resetIfNewDay(data) {
   const today = dayjs().format("YYYY-MM-DD");
 
   if (data.date !== today) {
+    console.log("🌅 Resetting new day");
+
     data.date = today;
     data.tasks.forEach((t) => (t.done = false));
+
     data.lastMissDate = null;
+    data.lastReminderDate = null;
+
     save(data);
   }
 }
@@ -123,51 +53,14 @@ function getEscalationMessage(streak) {
   return "";
 }
 
-// ===== CHECK MISS =====
-function checkMissLogic() {
-  let data = load();
-  resetIfNewDay(data);
-
-  const today = dayjs().format("YYYY-MM-DD");
-  const pendingTasks = data.tasks.filter((t) => !t.done);
-
-  if (pendingTasks.length > 0) {
-    if (!data.lastMissDate || data.lastMissDate !== today) {
-      data.streak = (data.streak || 0) + 1;
-      data.failStreak = (data.failStreak || 0) + 1;
-      data.lastMissDate = today;
-    }
-
-    const fine = data.penalty * data.streak;
-    const roast = getEscalationMessage(data.failStreak);
-    const taskList = pendingTasks.map((t) => `• ${t.name}`);
-
-    const message = [
-      "💀 MISS!",
-      "",
-      roast,
-      "",
-      "Task yang gagal:",
-      "",
-      ...taskList,
-      "",
-      `🔥 Streak gagal: ${data.streak}`,
-      `💸 Denda: Rp${fine}`,
-    ].join("\n");
-
-    save(data);
-    return { result: "MISS", message };
+// ===== SEND MESSAGE SAFE =====
+async function sendMessageSafe(number, text) {
+  try {
+    await sock.sendMessage(number + "@s.whatsapp.net", { text });
+    console.log("📤 Sent to", number);
+  } catch (err) {
+    console.log("❌ Failed send:", err.message);
   }
-
-  data.streak = 0;
-  data.failStreak = 0;
-  data.lastMissDate = null;
-  save(data);
-
-  return {
-    result: "SAFE",
-    message: "🔥 GOOD JOB! Semua task selesai hari ini ✅",
-  };
 }
 
 // ===== REMINDER =====
@@ -175,224 +68,272 @@ function checkReminderLogic() {
   let data = load();
   resetIfNewDay(data);
 
-  const pendingTasks = data.tasks.filter((t) => !t.done);
+  const today = dayjs().format("YYYY-MM-DD");
 
-  if (pendingTasks.length > 0) {
-    const nextStreak = (data.streak || 0) + 1;
-    const fine = data.penalty * nextStreak;
-
-    const taskList = pendingTasks.map((t) => `• ${t.name}`);
-
-    const message = [
-      "⚠️ Reminder!",
-      "",
-      ...taskList,
-      "",
-      `🔥 Kalau gagal streak jadi: ${nextStreak}`,
-      `💸 Denda: Rp${fine}`,
-      "",
-      "⏰ Deadline: 23:59",
-    ].join("\n");
-
-    return { result: "REMIND", message };
+  if (data.lastReminderDate === today) {
+    return { result: "SKIP" };
   }
 
-  return { result: "SAFE" };
+  const pending = data.tasks.filter((t) => !t.done);
+
+  if (pending.length === 0) {
+    data.lastReminderDate = today;
+    save(data);
+    return { result: "SAFE" };
+  }
+
+  const nextStreak = (data.streak || 0) + 1;
+  const fine = data.penalty * nextStreak;
+
+  const list = pending.map((t) => `• ${t.name}`).join("\n");
+
+  const message = `⚠️ Reminder!
+
+${list}
+
+🔥 Kalau gagal streak jadi: ${nextStreak}
+💸 Denda: Rp${fine}
+
+⏰ Deadline: 23:59`;
+
+  data.lastReminderDate = today;
+  save(data);
+
+  return { result: "REMIND", message };
 }
 
-// ===== COMMAND HANDLER =====
-async function handleCommand(text, sender) {
-  if (text === "test") {
-    console.log("📤 SENDING TEST REPLY...");
-    await sock.sendMessage(sender, { text: "BOT HIDUP ✅" });
-    console.log("✅ SENT");
-    return;
+// ===== MISS =====
+function checkMissLogic() {
+  let data = load();
+  resetIfNewDay(data);
+
+  const today = dayjs().format("YYYY-MM-DD");
+
+  if (data.lastMissDate === today) {
+    return { result: "SKIP" };
   }
-  console.log("🚀 MASUK HANDLE COMMAND:", text);
+
+  const pending = data.tasks.filter((t) => !t.done);
+
+  if (pending.length === 0) {
+    data.streak = 0;
+    data.failStreak = 0;
+    data.lastMissDate = today;
+    save(data);
+
+    return {
+      result: "SAFE",
+      message: "🔥 GOOD JOB! Semua task selesai hari ini ✅",
+    };
+  }
+
+  data.streak = (data.streak || 0) + 1;
+  data.failStreak = (data.failStreak || 0) + 1;
+  data.lastMissDate = today;
+
+  const fine = data.penalty * data.streak;
+  const roast = getEscalationMessage(data.failStreak);
+  const list = pending.map((t) => `• ${t.name}`).join("\n");
+
+  const message = `💀 MISS!
+
+${roast}
+
+Task gagal:
+${list}
+
+🔥 Streak gagal: ${data.streak}
+💸 Denda: Rp${fine}`;
+
+  save(data);
+
+  return { result: "MISS", message, fine, list };
+}
+
+// ===== RECOVERY SYSTEM =====
+async function recoveryCheck() {
+  console.log("🧠 Running recovery check...");
+
+  const now = dayjs();
+  const hour = now.hour();
 
   const data = load();
 
-  if (text === "cek") {
-    const result = checkReminderLogic();
-    await sock.sendMessage(sender, {
-      text: result.message || "✅ Aman",
-    });
-  } else if (text === "miss") {
-    const result = checkMissLogic();
+  // Reminder recovery
+  if (hour >= 20) {
+    const r = checkReminderLogic();
+    if (r.result === "REMIND") {
+      await sendMessageSafe(data.owner, "⚠️ (Recovery)\n\n" + r.message);
+    }
+  }
 
-    // kirim ke diri sendiri
-    await sock.sendMessage(sender, { text: result.message });
+  // Miss recovery
+  if (hour >= 23) {
+    const r = checkMissLogic();
+    if (r.result === "MISS") {
+      await sendMessageSafe(data.owner, "💀 (Recovery)\n\n" + r.message);
+    }
+  }
+}
 
-    // 🔥 TAMBAHAN: kirim ke shameContacts
-    if (result.result === "MISS") {
-      const fine = data.penalty * data.streak;
-      const failedTasks = data.tasks
-        .filter((t) => !t.done)
-        .map((t) => `• ${t.name}`)
-        .join("\n");
+// ===== WHATSAPP =====
+async function startWA() {
+  console.log("🔄 Starting WhatsApp...");
 
-      for (const num of data.shameContacts || []) {
-        await sock.sendMessage(num + "@s.whatsapp.net", {
-          text: `🚨 ALERT MALAM 🚨
+  const { state, saveCreds } = await useMultiFileAuthState("auth");
+  const { version } = await fetchLatestBaileysVersion();
 
-Pasangan kamu, ${data.name}, gagal lagi hari ini.
+  sock = makeWASocket({
+    auth: state,
+    version,
+    browser: ["Ubuntu", "Chrome", "20.0.04"],
+  });
 
-📋 Daftar tugas yang tidak dikerjakan:
-${failedTasks}
+  sock.ev.on("creds.update", saveCreds);
 
-📉 Sudah gagal selama: ${data.streak} hari berturut-turut
-💸 Denda yang harus dibayar: Rp${fine}
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, lastDisconnect, qr } = update;
 
-Ini sudah mulai jadi pola, bukan kejadian sekali 😈`,
-        });
+    if (qr) {
+      qrcode.generate(qr, { small: true });
+    }
+
+    if (connection === "open") {
+      console.log("🔥 Connected!");
+
+      // 🔥 Recovery after connect
+      setTimeout(recoveryCheck, 5000);
+    }
+
+    if (connection === "close") {
+      const shouldReconnect =
+        lastDisconnect?.error?.output?.statusCode !==
+        DisconnectReason.loggedOut;
+
+      if (shouldReconnect) {
+        console.log("🔁 Reconnecting...");
+        setTimeout(startWA, 3000);
       }
     }
-  } else if (text === "status") {
-    const list = data.tasks.map((t) => `${t.done ? "✅" : "❌"} ${t.name}`);
+  });
 
-    await sock.sendMessage(sender, {
-      text: ["📊 STATUS:", "", ...list].join("\n"),
-    });
-  } else if (text.startsWith("add ")) {
-    const taskName = text.replace("add ", "");
+  sock.ev.on("messages.upsert", async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg.message || msg.key.fromMe) return;
+
+    const sender = msg.key.remoteJid;
+    const text =
+      msg.message.conversation || msg.message.extendedTextMessage?.text;
+
+    if (!text) return;
+
+    await handleCommand(text.toLowerCase(), sender);
+  });
+}
+
+// ===== COMMAND =====
+async function handleCommand(text, sender) {
+  const data = load();
+
+  if (text === "cek") {
+    const r = checkReminderLogic();
+    await sendMessageSafe(data.owner, r.message || "✅ Aman");
+  }
+
+  else if (text === "miss") {
+    const r = checkMissLogic();
+    await sendMessageSafe(data.owner, r.message);
+  }
+
+  else if (text === "status") {
+    const list = data.tasks
+      .map((t) => `${t.done ? "✅" : "❌"} ${t.name}`)
+      .join("\n");
+
+    await sendMessageSafe(data.owner, "📊 STATUS:\n\n" + list);
+  }
+
+  else if (text.startsWith("add ")) {
+    const name = text.replace("add ", "");
 
     data.tasks.push({
       id: Date.now(),
-      name: taskName,
+      name,
       done: false,
     });
 
     save(data);
+    await sendMessageSafe(data.owner, `✅ Task "${name}" ditambahkan`);
+  }
 
-    await sock.sendMessage(sender, {
-      text: `✅ Task "${taskName}" ditambahkan`,
-    });
-  } else if (text.startsWith("done ")) {
-    const taskName = text.replace("done ", "");
+  else if (text.startsWith("done ")) {
+    const name = text.replace("done ", "");
 
-    const task = data.tasks.find((t) => t.name === taskName);
+    const task = data.tasks.find((t) => t.name === name);
 
     if (!task) {
-      await sock.sendMessage(sender, {
-        text: "❌ Task tidak ditemukan",
-      });
+      await sendMessageSafe(data.owner, "❌ Task tidak ditemukan");
       return;
     }
 
     task.done = true;
     save(data);
 
-    await sock.sendMessage(sender, {
-      text: `🔥 Task "${taskName}" selesai`,
-    });
-  } else if (text.startsWith("del ") || text.startsWith("delete ")) {
-    const taskName = text.replace("del ", "").replace("delete ", "");
-
-    const index = data.tasks.findIndex((t) => t.name === taskName);
-
-    if (index === -1) {
-      await sock.sendMessage(sender, {
-        text: "❌ Task tidak ditemukan",
-      });
-      return;
-    }
-
-    const deletedTask = data.tasks[index].name;
-
-    data.tasks.splice(index, 1);
-    save(data);
-
-    await sock.sendMessage(sender, {
-      text: `🗑️ Task "${deletedTask}" berhasil dihapus`,
-    });
-  } else if (text === "help") {
-    await sock.sendMessage(sender, {
-      text: `
-🤖 COMMAND:
-
-cek → reminder
-miss → check gagal
-status → lihat task
-add [task]
-done [task]
-      `,
-    });
+    await sendMessageSafe(data.owner, `🔥 Task "${name}" selesai`);
   }
 }
 
 // ===== CRON =====
 
-// ⏰ reminder 20:00 WIB
+// Reminder 20:00
 cron.schedule(
   "0 20 * * *",
   async () => {
-    console.log("⏰ Reminder triggered");
-
-    const result = checkReminderLogic();
-    if (result.result !== "REMIND") return;
+    console.log("⏰ Reminder cron");
 
     const data = load();
+    const r = checkReminderLogic();
 
-    await sock.sendMessage(data.shameContacts[0] + "@s.whatsapp.net", {
-      text: result.message,
-    });
+    if (r.result === "REMIND") {
+      await sendMessageSafe(data.owner, r.message);
+    }
   },
-  { timezone: "Asia/Jakarta" },
+  { timezone: "Asia/Jakarta" }
 );
 
-// 💀 miss 23:59 WIB
+// Miss 23:59
 cron.schedule(
   "59 23 * * *",
   async () => {
-    console.log("💀 Miss triggered");
+    console.log("💀 Miss cron");
 
-    const result = checkMissLogic();
     const data = load();
+    const r = checkMissLogic();
 
-    await sock.sendMessage(data.shameContacts[0] + "@s.whatsapp.net", {
-      text: result.message,
-    });
+    await sendMessageSafe(data.owner, r.message);
 
-    if (result.result === "MISS") {
-      const fine = data.penalty * data.streak;
-
-      // 🔥 ambil escalation message
-      const roast = getEscalationMessage(data.failStreak);
-
-      // 🔥 ambil task gagal
-      const failedTasks =
-        data.tasks.filter((t) => !t.done).length > 0
-          ? data.tasks
-              .filter((t) => !t.done)
-              .map((t) => `• ${t.name}`)
-              .join("\n")
-          : "• (tidak ada task, tapi tetap gagal 😏)";
-
+    if (r.result === "MISS") {
       for (const num of data.shameContacts || []) {
-        await sock.sendMessage(num + "@s.whatsapp.net", {
-          text: `🚨 ALERT MALAM 🚨
+        await sendMessageSafe(
+          num,
+          `🚨 ALERT MALAM 🚨
 
-Pasangan kamu, ${data.name}, gagal lagi hari ini.
+Pasangan kamu, ${data.name}, gagal hari ini.
 
-${roast}
+${r.list}
 
-📋 Tugas yang tidak dikerjakan:
-${failedTasks}
-
-📉 Streak gagal: ${data.streak}
-💸 Denda hari ini: Rp${fine}
-
-Tolong diingatkan ya... sebelum ini jadi kebiasaan 😈`,
-        });
+🔥 Streak: ${data.streak}
+💸 Denda: Rp${r.fine}`
+        );
       }
     }
   },
-  { timezone: "Asia/Jakarta" },
+  { timezone: "Asia/Jakarta" }
 );
 
 // ===== START =====
 app.listen(3000, () => {
-  console.log("🚀 Server running on http://localhost:3000");
+  console.log("🚀 Server running");
 });
 
 startWA();
